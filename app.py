@@ -2,32 +2,54 @@ import streamlit as st
 from transformers import pipeline
 import fitz  # PyMuPDF
 
+# Title
+st.title("📄 AI PDF Summarizer")
+
+# Load summarizer model
 @st.cache_resource
 def load_model():
     return pipeline("summarization", model="facebook/bart-large-cnn")
 
 summarizer = load_model()
 
-st.title("📄 AI PDF Summarizer")
-st.write("Upload a PDF file and get a summary using AI!")
+# Upload PDF
+uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
 
-pdf_file = st.file_uploader("Upload PDF", type=["pdf"])
+if uploaded_file:
+    # Extract text
+    with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
+        text = ""
+        for page in doc:
+            text += page.get_text()
 
-if pdf_file:
-    doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
-    full_text = ""
-    for page in doc:
-        full_text += page.get_text()
+    st.write("✅ Text Extracted")
+    st.write(text[:500] + "..." if len(text) > 500 else text)
 
-    st.subheader("📑 Original Text (Preview)")
-    st.text(full_text[:1000] + "..." if len(full_text) > 1000 else full_text)
+    if st.button("Generate Summary"):
+        # Split into chunks
+        def split_text(text, max_chunk=1000):
+            sentences = text.split('. ')
+            chunks = []
+            chunk = ""
+            for sentence in sentences:
+                if len(chunk) + len(sentence) <= max_chunk:
+                    chunk += sentence + ". "
+                else:
+                    chunks.append(chunk.strip())
+                    chunk = sentence + ". "
+            chunks.append(chunk.strip())
+            return chunks
 
-    st.subheader("🧠 Summary")
-    chunks = [full_text[i:i+1000] for i in range(0, len(full_text), 1000)]
-    final_summary = ""
+        chunks = split_text(text)
+        st.write(f"🧠 Splitting into {len(chunks)} chunk(s)")
 
-    for chunk in chunks:
-        summary = summarizer(chunk, max_length=60, min_length=20, do_sample=False)
-        final_summary += summary[0]['summary_text'] + " "
+        # Generate summary
+        final_summary = ""
+        for chunk in chunks:
+            summary = summarizer(chunk, max_length=120, min_length=30, do_sample=False)[0]['summary_text']
+            final_summary += summary + " "
 
-    st.success(final_summary)
+        # Display
+        st.subheader("📌 Summary")
+        st.write(final_summary.strip())
+
