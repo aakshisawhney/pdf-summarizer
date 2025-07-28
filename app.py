@@ -2,54 +2,59 @@ import streamlit as st
 from transformers import pipeline
 import fitz  # PyMuPDF
 
-# Title
-st.title("📄 AI PDF Summarizer")
-
-# Load summarizer model
+# Load the summarization model (faster one)
 @st.cache_resource
 def load_model():
-    return pipeline("summarization", model="facebook/bart-large-cnn")
+    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
 
 summarizer = load_model()
 
-# Upload PDF
-uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
+# Title
+st.title("📄 PDF Summarizer App")
+st.markdown("Upload a PDF and get a quick summary using ML!")
 
-if uploaded_file:
-    # Extract text
-    with fitz.open(stream=uploaded_file.read(), filetype="pdf") as doc:
-        text = ""
+# File uploader
+pdf_file = st.file_uploader("Upload a PDF", type=["pdf"])
+
+# Process PDF
+if pdf_file is not None:
+    with st.spinner("Extracting text from PDF..."):
+        doc = fitz.open(stream=pdf_file.read(), filetype="pdf")
+        full_text = ""
         for page in doc:
-            text += page.get_text()
+            full_text += page.get_text()
 
-    st.write("✅ Text Extracted")
-    st.write(text[:500] + "..." if len(text) > 500 else text)
+    # Display extracted text (optional)
+    st.success("✅ Text Extracted")
+    st.text_area("Extracted Text", full_text[:1000] + "..." if len(full_text) > 1000 else full_text, height=200)
 
-    if st.button("Generate Summary"):
-        # Split into chunks
-        def split_text(text, max_chunk=1000):
-            sentences = text.split('. ')
-            chunks = []
-            chunk = ""
-            for sentence in sentences:
-                if len(chunk) + len(sentence) <= max_chunk:
-                    chunk += sentence + ". "
-                else:
-                    chunks.append(chunk.strip())
-                    chunk = sentence + ". "
-            chunks.append(chunk.strip())
-            return chunks
+    # Split text into chunks
+    def split_text(text, max_chunk=1000):
+        sentences = text.split('. ')
+        chunks = []
+        current_chunk = ""
+        for sentence in sentences:
+            if len(current_chunk) + len(sentence) <= max_chunk:
+                current_chunk += sentence + ". "
+            else:
+                chunks.append(current_chunk.strip())
+                current_chunk = sentence + ". "
+        if current_chunk:
+            chunks.append(current_chunk.strip())
+        return chunks
 
-        chunks = split_text(text)
-        st.write(f"🧠 Splitting into {len(chunks)} chunk(s)")
+    chunks = split_text(full_text)
+    st.info(f"🧠 Splitting into {len(chunks)} chunk(s)")
 
-        # Generate summary
-        final_summary = ""
-        for chunk in chunks:
-            summary = summarizer(chunk, max_length=120, min_length=30, do_sample=False)[0]['summary_text']
-            final_summary += summary + " "
+    # Summarize only first 2 chunks for speed
+    if st.button("Summarize"):
+        with st.spinner("Generating summary..."):
+            summary = ""
+            for chunk in chunks[:2]:  # Only summarize first 2 chunks
+                s = summarizer(chunk, max_length=120, min_length=30, do_sample=False)[0]['summary_text']
+                summary += s + "\n\n"
 
-        # Display
-        st.subheader("📌 Summary")
-        st.write(final_summary.strip())
+            st.subheader("📌 Summary")
+            st.write(summary)
+
 
